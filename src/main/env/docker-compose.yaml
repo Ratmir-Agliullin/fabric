@@ -1,0 +1,131 @@
+version: '2'
+
+
+services:
+  ca1:
+    container_name: ca_peerOrg1
+    image: hyperledger/fabric-ca
+    ports:
+      - 7054:7054
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+    volumes:
+      - ./channel/crypto-config/peerOrganizations/org1.example.com/ca/:/etc/hyperledger/fabric-ca-server-config:ro
+    command: sh -c 'fabric-ca-server start --ca.certfile /etc/hyperledger/fabric-ca-server-config/ca.org1.example.com-cert.pem --ca.keyfile /etc/hyperledger/fabric-ca-server-config/84c62bd9de50dc722e46ca7e01d969d8465dbe29ac1dd74c36d75de30aa0a56d_sk -b admin:adminpw  -d'
+
+  ca2:
+    container_name: ca_peerOrg2
+    image: hyperledger/fabric-ca
+    ports:
+      - 8054:7054
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+    volumes:
+      - ./channel/crypto-config/peerOrganizations/org2.example.com/ca/:/etc/hyperledger/fabric-ca-server-config:ro
+    command: sh -c 'fabric-ca-server start --ca.certfile /etc/hyperledger/fabric-ca-server-config/ca.org2.example.com-cert.pem --ca.keyfile /etc/hyperledger/fabric-ca-server-config/abdf9e3022527ab9f09e115a75784256098b9b1475eeb473585125c556a6a002_sk -b admin:adminpw -d'
+
+  orderer.example.com:
+    container_name: orderer.example.com
+    image: hyperledger/fabric-orderer
+    ports:
+      - 7050:7050
+    volumes:
+     - ./channel:/etc/hyperledger/configtx
+     - ./channel/crypto-config/ordererOrganizations/example.com/orderers/orderer.example.com/:/etc/hyperledger/msp/orderer:ro
+    environment:
+      - ORDERER_GENERAL_LOGLEVEL=debug
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_GENESISMETHOD=file
+      - ORDERER_GENERAL_GENESISFILE=/etc/hyperledger/configtx/genesis.block
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/etc/hyperledger/msp/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=false
+      - GRPC_TRACE=all=true,
+      - GRPC_VERBOSITY=debug
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric
+    command: orderer
+
+  peer0.org1.example.com:
+    container_name: peer0.org1.example.com
+    extends:
+      file: ./channel/peer-base.yaml
+      service: peer-base
+    ports:
+      - 7051:7051
+      - 7053:7053
+    volumes:
+      - /var/run/:/host/var/run/
+      - ./channel/crypto-config/peerOrganizations/org1.example.com/peers/peer0.org1.example.com/:/etc/hyperledger/msp/peer:ro
+    environment:
+      - CORE_PEER_ID=peer0.org1.example.com
+      - CORE_PEER_ADDRESS=peer0.org1.example.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org1.example.com:7051
+#      - CORE_PEER_GOSSIP_ORGLEADER=true
+      - CORE_PEER_LOCALMSPID=Org1MSP
+    depends_on:
+      - orderer.example.com
+
+#  peer1.org1.example.com:
+#    container_name: peer1.org1.example.com
+#    extends:
+#      file: peer-base/peer-base.yaml
+#      service: peer-base
+#    environment:
+#      - CORE_PEER_ID=peer1.org1.example.com
+#      - CORE_PEER_ADDRESS=peer1.org1.example.com:7051
+#      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org1.example.com:7051
+##      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org1.example.com:7051
+#      - CORE_PEER_LOCALMSPID=Org1MSP
+#    volumes:
+#         - /var/run/:/host/var/run/
+#         - ./e2e-2Orgs/channel/crypto-config/peerOrganizations/org1.example.com/peers/peer1.org1.example.com/:/etc/hyperledger/msp/peer:ro
+#    ports:
+#       - 7056:7051
+#       - 7058:7053
+#    depends_on:
+#       - orderer.example.com
+#       - peer0.org1.example.com
+
+  peer0.org2.example.com:
+    container_name: peer0.org2.example.com
+    extends:
+      file: ./channel/peer-base.yaml
+      service: peer-base
+    ports:
+      - 8051:7051
+      - 8053:7053
+    volumes:
+      - /var/run/:/host/var/run/
+      - ./channel/crypto-config/peerOrganizations/org2.example.com/peers/peer0.org2.example.com/:/etc/hyperledger/msp/peer:ro
+    environment:
+      - CORE_PEER_ID=peer0.org2.example.com
+      - CORE_PEER_ADDRESS=peer0.org2.example.com:7051
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.org2.example.com:8051
+#      - CORE_PEER_GOSSIP_ORGLEADER=true
+      - CORE_PEER_LOCALMSPID=Org2MSP
+    depends_on:
+      - orderer.example.com
+
+#  peer1.org2.example.com:
+#    container_name: peer1.org2.example.com
+#    extends:
+#      file: peer-base/peer-base.yaml
+#      service: peer-base
+#    environment:
+#      - CORE_PEER_ID=peer1.org2.example.com
+#      - CORE_PEER_ADDRESS=peer1.org2.example.com:7051
+#      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer1.org2.example.com:8051
+##      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.org2.example.com:8051
+#      - CORE_PEER_LOCALMSPID=Org2MSP
+#    volumes:
+#         - /var/run/:/host/var/run/
+#         - ./e2e-2Orgs/channel/crypto-config/peerOrganizations/org2.example.com/peers/peer1.org2.example.com/:/etc/hyperledger/msp/peer:ro
+#    ports:
+#       - 8056:7051
+#       - 8058:7053
+#    depends_on:
+#       - orderer.example.com
+#       - peer0.org2.example.com
+
+#  ccenv:
+#    image: hyperledger/fabric-ccenv
