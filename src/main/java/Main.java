@@ -47,7 +47,7 @@ public class Main {
     public static final String MSPID = "Org1MSP";
     public static final String CHAIN_CODE_PATH = "mainjava";
     public static final String CHAIN_CODE_VERSION = "1";
-    public static final String CHAIN_CODE_NAME = "doc";
+    public static final String CHAIN_CODE_NAME = "doc_cc";
 
     public static void main(String[] args) {
         try {
@@ -134,7 +134,7 @@ try {
 
             final ChaincodeID chaincodeID = ChaincodeID.newBuilder().setName(CHAIN_CODE_NAME)
                     .setVersion(CHAIN_CODE_VERSION)
-                    .setPath("main/java").build();
+                    .setPath("main/cc/src/doc_cc").build();
 
 
             InstallProposalRequest installProposalRequest = client.newInstallProposalRequest();
@@ -177,54 +177,47 @@ try {
 
 
 
+//
+//            List<FabricProposalResponse.Endorsement> ed = new LinkedList<>();
+//            FabricProposal.Proposal proposal = null;
+//
+//            ByteString proposalResponsePayload = ByteString.copyFromUtf8("1234");
+//            String proposalTransactionID = "proposalTransactionID";
+//
+//
+//            for (ProposalResponse sdkProposalResponse : responses4) {
+//                try {
+//                    System.out.println(sdkProposalResponse.getStatus());
+//                    System.out.println(sdkProposalResponse.getMessage());
+//
+//                    FabricProposalResponse.Endorsement element = sdkProposalResponse.getProposalResponse().getEndorsement();
+//                    ed.add(element);
+//                } catch (NullPointerException e) {
+//                    e.printStackTrace();
+//                }
+//                if (proposal == null) {//here
+//                    proposal = sdkProposalResponse.getProposal();
+//                    proposalTransactionID = sdkProposalResponse.getTransactionID();
+//                    proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
+//
+//                }
+//
+//
+//            }
+//
+//
+//            TransactionBuilder transactionBuilder = TransactionBuilder.newBuilder();
+//
+//            Common.Payload transactionPayload = transactionBuilder
+//                    .chaincodeProposal(proposal)
+//                    .endorsements(ed)
+//                    .proposalResponsePayload(proposalResponsePayload).build();
+//
+//            Common.Envelope transactionEnvelope = Common.Envelope.newBuilder()
+//                    .setPayload(transactionPayload.toByteString())
+//                    .setSignature(ByteString.copyFrom(client.getCryptoSuite().sign(org1_user.getEnrollment().getKey(), transactionPayload.toByteArray())))
+//                    .build();
 
-            List<FabricProposalResponse.Endorsement> ed = new LinkedList<>();
-            FabricProposal.Proposal proposal = null;
-
-            ByteString proposalResponsePayload = ByteString.copyFromUtf8("1234");
-            String proposalTransactionID = "proposalTransactionID";
-
-
-            for (ProposalResponse sdkProposalResponse : responses4) {
-                try {
-                    System.out.println(sdkProposalResponse.getStatus());
-                    System.out.println(sdkProposalResponse.getMessage());
-
-                    FabricProposalResponse.Endorsement element = sdkProposalResponse.getProposalResponse().getEndorsement();
-                    ed.add(element);
-                } catch (NullPointerException e) {
-                    e.printStackTrace();
-                }
-                if (proposal == null) {//here
-                    proposal = sdkProposalResponse.getProposal();
-                    proposalTransactionID = sdkProposalResponse.getTransactionID();
-                    proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
-
-                }
-
-
-            }
-
-
-            TransactionBuilder transactionBuilder = TransactionBuilder.newBuilder();
-
-            Common.Payload transactionPayload = transactionBuilder
-                    .chaincodeProposal(proposal)
-                    .endorsements(ed)
-                    .proposalResponsePayload(proposalResponsePayload).build();
-
-            Common.Envelope transactionEnvelope = Common.Envelope.newBuilder()
-                    .setPayload(transactionPayload.toByteString())
-                    .setSignature(ByteString.copyFrom(client.getCryptoSuite().sign(org1_user.getEnrollment().getKey(), transactionPayload.toByteArray())))
-                    .build();
-
-
-            //       CompletableFuture<BlockEvent.TransactionEvent> sret = registerTxListener(proposalTransactionID);
-
-            //channel.sendTransaction();
-//            Collection<Orderer> orderers = new ArrayList<>();
-//            orderers.add(orderer);
-//            channel.sendTransaction(responses, orderers);
 
 
 
@@ -241,7 +234,7 @@ try {
 
             TransactionProposalRequest transactionProposalRequest = client.newTransactionProposalRequest();
             transactionProposalRequest.setChaincodeID(chaincodeID);
-            transactionProposalRequest.setFcn("invoke");
+            transactionProposalRequest.setFcn("Invoke");
             transactionProposalRequest.setProposalWaitTime(150L);
             transactionProposalRequest.setArgs(new String[] {"move", "a", "b", "100"});
 
