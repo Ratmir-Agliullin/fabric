@@ -45,7 +45,7 @@ public class Main {
     public static final String CHANELTX = "src/main/env/channel/channel.tx";
     public static final String ADMINSECRET = "adminpw";
     public static final String MSPID = "Org1MSP";
-    public static final String CHAIN_CODE_PATH = "/main/java";
+    public static final String CHAIN_CODE_PATH = "mainjava";
     public static final String CHAIN_CODE_VERSION = "1";
     public static final String CHAIN_CODE_NAME = "doc";
 
@@ -93,21 +93,22 @@ try {
             ordererProperties.setProperty("hostnameOverride", "orderer.example.com");
             ordererProperties.setProperty("sslProvider", "openSSL");
             ordererProperties.setProperty("negotiationType", "TLS");
-            ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{15L, TimeUnit.MINUTES});
-            ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{15L, TimeUnit.SECONDS});
+            ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{150L, TimeUnit.MINUTES});
+            ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{150L, TimeUnit.SECONDS});
             Orderer orderer = client.newOrderer("orderer.example.com", "grpc://" + IP + ":7050", ordererProperties);
 
             Properties peerProperties = new Properties();
             cf = new File(PEERSERVER);
             peerProperties.setProperty("pemFile", cf.getAbsolutePath());
+            peerProperties.setProperty("peerOrg1.mspid", "Org1MSP");
             peerProperties.setProperty("hostnameOverride", "peer0.org1.example.com");
             peerProperties.setProperty("sslProvider", "openSSL");
             peerProperties.setProperty("negotiationType", "TLS");
             peerProperties.put("grpc.NettyChannelBuilderOption.maxInboundMessageSize", 9000000);
-            Peer peer = client.newPeer("peer0.org1.example.com", "grpc://" + IP + ":7053", peerProperties);
+            Peer peer = client.newPeer("peer0.org1.example.com", "grpc://" + IP + ":7051", peerProperties);
 
 
-       //     EndorserGrpc endorserGrpc = new
+
 
             Properties ehProperties = new Properties();
             cf = new File(PEERSERVER);
@@ -115,15 +116,15 @@ try {
             ehProperties.setProperty("hostnameOverride", "peer0.org1.example.com");
             ehProperties.setProperty("sslProvider", "openSSL");
             ehProperties.setProperty("negotiationType", "TLS");
-            ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{15L, TimeUnit.MINUTES});
-            ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{15L, TimeUnit.SECONDS});
+            ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{150L, TimeUnit.MINUTES});
+            ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{150L, TimeUnit.SECONDS});
             EventHub eventHub = client.newEventHub("peer0.org1.example.com", "grpc://" + IP + ":7053", ehProperties);
 
             ChannelConfiguration channelConfiguration = new ChannelConfiguration(new File(CHANELTX));
             Channel channel = client.newChannel("mychannel", orderer, channelConfiguration, client.getChannelConfigurationSignature(channelConfiguration, org1_peer_admin));
 
             channel.addOrderer(orderer);
-            channel.addPeer(peer);
+            channel.joinPeer(peer);
             channel.addEventHub(eventHub);
 
             channel.initialize();
@@ -133,39 +134,38 @@ try {
 
             final ChaincodeID chaincodeID = ChaincodeID.newBuilder().setName(CHAIN_CODE_NAME)
                     .setVersion(CHAIN_CODE_VERSION)
-                    .setPath(CHAIN_CODE_PATH).build();
+                    .setPath("main/java").build();
 
 
             InstallProposalRequest installProposalRequest = client.newInstallProposalRequest();
             installProposalRequest.setChaincodeID(chaincodeID);
-            ChaincodeEndorsementPolicy chaincodeEndorsementPolicy = new ChaincodeEndorsementPolicy();
+           ChaincodeEndorsementPolicy chaincodeEndorsementPolicy = new ChaincodeEndorsementPolicy();
             chaincodeEndorsementPolicy.fromYamlFile(new File("C:\\Users\\agliullin\\IdeaProjects\\fabric6\\src\\main\\env\\chaincodeendorsementpolicy.yaml"));
             File initialFile = new File("C:\\Users\\agliullin\\IdeaProjects\\fabric6");
-          //  InputStream targetStream = FileUtils.openInputStream(initialFile);
-         //   installProposalRequest.setChaincodeInputStream(targetStream);
+
             installProposalRequest.setChaincodeSourceLocation(initialFile);
-            installProposalRequest.setChaincodeVersion(CHAIN_CODE_VERSION);
-            installProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
-           // client.sendInstallProposal(installProposalRequest, peersFromOrg);
+        installProposalRequest.setChaincodeVersion(CHAIN_CODE_VERSION);
+          //  installProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
+
             Set<Peer> peersFromOrg = new HashSet<>();
             peersFromOrg.add(peer);
-
+         //   client.sendInstallProposal(installProposalRequest, peersFromOrg);
 
 
 
             Collection<ProposalResponse> responses = client.sendInstallProposal(installProposalRequest, peersFromOrg);
             ProposalResponse response = responses.iterator().next();
 
-            System.out.println(response.getMessage().toString());
+            System.out.println(response.getMessage().toString());//here
             System.out.println("response, который мы получили = " + response.toString());
 
 
             InstantiateProposalRequest instantiateProposalRequest = client.newInstantiationProposalRequest();
-            instantiateProposalRequest.setProposalWaitTime(15L);
+            instantiateProposalRequest.setProposalWaitTime(150L);
             instantiateProposalRequest.setChaincodeID(chaincodeID);
             instantiateProposalRequest.setFcn("Init");
-            instantiateProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
-            instantiateProposalRequest.setArgs(new String[] {"test","val0"});
+          instantiateProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
+            instantiateProposalRequest.setArgs(new String[] {"a", "500", "b","200"});
             Map<String, byte[]> tm = new HashMap<>();
             tm.put("HyperLedgerFabric", "InstantiateProposalRequest:JavaSDK".getBytes(UTF_8));
             tm.put("method", "InstantiateProposalRequest".getBytes(UTF_8));
@@ -195,7 +195,7 @@ try {
                 } catch (NullPointerException e) {
                     e.printStackTrace();
                 }
-                if (proposal == null) {
+                if (proposal == null) {//here
                     proposal = sdkProposalResponse.getProposal();
                     proposalTransactionID = sdkProposalResponse.getTransactionID();
                     proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
@@ -241,9 +241,9 @@ try {
 
             TransactionProposalRequest transactionProposalRequest = client.newTransactionProposalRequest();
             transactionProposalRequest.setChaincodeID(chaincodeID);
-            transactionProposalRequest.setFcn("Invoke");
-            transactionProposalRequest.setProposalWaitTime(15L);
-            transactionProposalRequest.setArgs(new String[] {"add","name1", "hash1"});
+            transactionProposalRequest.setFcn("invoke");
+            transactionProposalRequest.setProposalWaitTime(150L);
+            transactionProposalRequest.setArgs(new String[] {"move", "a", "b", "100"});
 
             Map<String, byte[]> tm2 = new HashMap<>();
             tm2.put("HyperLedgerFabric", "TransactionProposalRequest:JavaSDK".getBytes(UTF_8));
