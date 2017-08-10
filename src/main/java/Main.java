@@ -10,9 +10,7 @@ import org.hyperledger.fabric.protos.peer.EndorserGrpc;
 import org.hyperledger.fabric.protos.peer.FabricProposal;
 import org.hyperledger.fabric.protos.peer.FabricProposalResponse;
 import org.hyperledger.fabric.sdk.*;
-import org.hyperledger.fabric.sdk.exception.CryptoException;
-import org.hyperledger.fabric.sdk.exception.InvalidArgumentException;
-import org.hyperledger.fabric.sdk.exception.TransactionEventException;
+import org.hyperledger.fabric.sdk.exception.*;
 import org.hyperledger.fabric.sdk.security.CryptoSuite;
 import org.hyperledger.fabric.sdk.transaction.TransactionBuilder;
 import org.hyperledger.fabric_ca.sdk.HFCAClient;
@@ -29,7 +27,9 @@ import java.security.PrivateKey;
 import java.security.spec.InvalidKeySpecException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -50,55 +50,117 @@ public class Main {
     public static final String CHAIN_CODE_VERSION = "1";
     public static final String CHAIN_CODE_NAME = "doc_cc";
 
-    public static void main(String[] args) {
+
+// variables
+File cf=null;
+    Properties properties=null;
+    HFCAClient org1_ca = null;
+    FCUser org1_admin=null;
+    FCUser org1_peer_admin=null;
+    File certificateFile=null;
+    PrivateKey privateKey = null;
+    File privateKeyFile=null;
+    HFClient client=null;
+    Properties ordererProperties=null;
+    Orderer orderer = null;
+    Properties peerProperties=null;
+    Peer peer = null;
+
+    EventHub eventHub = null;
+    ChannelConfiguration channelConfiguration = null;
+    Channel channel = null;
+    Properties ehProperties=null;
+    FCUser org1_user;
+
+    public void CreateAndConfigureChannel(){
         try {
-            File cf = new File(CFPATH);
-            Properties properties = new Properties();
+             cf = new File(CFPATH);
+             properties = new Properties();
             properties.setProperty("allowAllHostNames", "true");
             properties.setProperty("pemFile", cf.getAbsolutePath());
 
-            HFCAClient org1_ca = HFCAClient.createNewInstance("http://" + IP + ":7054", properties);
+
+            try {
+                org1_ca = HFCAClient.createNewInstance("http://" + IP + ":7054", properties);
+            } catch (MalformedURLException e) {
+                e.printStackTrace();
+            }
             org1_ca.setCryptoSuite(CryptoSuite.Factory.getCryptoSuite());
 
-            FCUser org1_admin = new FCUser("admin");
-            org1_admin.setEnrollment(org1_ca.enroll(org1_admin.getName(), ADMINSECRET));
-            FCUser org1_user;
-try {
-    org1_user = RegisterUser.registerUser("user1", org1_admin, org1_ca, MSPID);
-} catch (RegistrationException e){
-    System.out.println(e.getMessage());
-    System.out.println("Перезапусти докер");
-    return;
-}
+             org1_admin = new FCUser("admin");
+            try {
+                org1_admin.setEnrollment(org1_ca.enroll(org1_admin.getName(), ADMINSECRET));
+            } catch (EnrollmentException e) {
+                e.printStackTrace();
+            } catch (org.hyperledger.fabric_ca.sdk.exception.InvalidArgumentException e) {
+                e.printStackTrace();
+            }
+
+            try {
+                org1_user = RegisterUser.registerUser("user1", org1_admin, org1_ca, MSPID);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
 
             //    RegisterUser.registerUser("Ratmir", org1_admin, org1_ca, MSPID);
 
-            FCUser org1_peer_admin = new FCUser("Org1Admin");
+          org1_peer_admin = new FCUser("Org1Admin");
             org1_peer_admin.setMspId(MSPID);
 
-            File certificateFile = Paths.get(SERTIFICATEPATH).toFile();
-            String certificate = new String(IOUtils.toByteArray(new FileInputStream(certificateFile.getAbsolutePath())), "UTF-8");
+            certificateFile = Paths.get(SERTIFICATEPATH).toFile();
+            String certificate = null;
+            try {
+                certificate = new String(IOUtils.toByteArray(new FileInputStream(certificateFile.getAbsolutePath())), "UTF-8");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
 
-            File privateKeyFile = Paths.get(PRIVATKEY).toFile();
-            PrivateKey privateKey = getPrivateKeyFromBytes(IOUtils.toByteArray(new FileInputStream(privateKeyFile.getAbsolutePath())));
+            privateKeyFile = Paths.get(PRIVATKEY).toFile();
+
+            try {
+                privateKey = getPrivateKeyFromBytes(IOUtils.toByteArray(new FileInputStream(privateKeyFile.getAbsolutePath())));
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (NoSuchProviderException e) {
+                e.printStackTrace();
+            } catch (NoSuchAlgorithmException e) {
+                e.printStackTrace();
+            } catch (InvalidKeySpecException e) {
+                e.printStackTrace();
+            }
 
             org1_peer_admin.setEnrollment(new FCEnrollment(privateKey, certificate));
 
-            HFClient client = HFClient.createNewInstance();
-            client.setCryptoSuite(CryptoSuite.Factory.getCryptoSuite());
-            client.setUserContext(org1_peer_admin);
+           client = HFClient.createNewInstance();
+            try {
+                client.setCryptoSuite(CryptoSuite.Factory.getCryptoSuite());
+            } catch (CryptoException e) {
+                e.printStackTrace();
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
+            try {
+                client.setUserContext(org1_peer_admin);
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
 
             cf = new File(SERVERCRT);
-            Properties ordererProperties = new Properties();
+         ordererProperties = new Properties();
             ordererProperties.setProperty("pemFile", cf.getAbsolutePath());
             ordererProperties.setProperty("hostnameOverride", "orderer.example.com");
             ordererProperties.setProperty("sslProvider", "openSSL");
             ordererProperties.setProperty("negotiationType", "TLS");
             ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{150L, TimeUnit.MINUTES});
             ordererProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{150L, TimeUnit.SECONDS});
-            Orderer orderer = client.newOrderer("orderer.example.com", "grpc://" + IP + ":7050", ordererProperties);
 
-            Properties peerProperties = new Properties();
+            try {
+                orderer = client.newOrderer("orderer.example.com", "grpc://" + IP + ":7050", ordererProperties);
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
+
+           peerProperties = new Properties();
             cf = new File(PEERSERVER);
             peerProperties.setProperty("pemFile", cf.getAbsolutePath());
             peerProperties.setProperty("peerOrg1.mspid", "Org1MSP");
@@ -106,12 +168,15 @@ try {
             peerProperties.setProperty("sslProvider", "openSSL");
             peerProperties.setProperty("negotiationType", "TLS");
             peerProperties.put("grpc.NettyChannelBuilderOption.maxInboundMessageSize", 9000000);
-            Peer peer = client.newPeer("peer0.org1.example.com", "grpc://" + IP + ":7051", peerProperties);
+
+            try {
+                peer = client.newPeer("peer0.org1.example.com", "grpc://" + IP + ":7051", peerProperties);
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
 
 
-
-
-            Properties ehProperties = new Properties();
+           ehProperties = new Properties();
             cf = new File(PEERSERVER);
             ehProperties.setProperty("pemFile", cf.getAbsolutePath());
             ehProperties.setProperty("hostnameOverride", "peer0.org1.example.com");
@@ -119,94 +184,152 @@ try {
             ehProperties.setProperty("negotiationType", "TLS");
             ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTime", new Object[]{150L, TimeUnit.MINUTES});
             ehProperties.put("grpc.NettyChannelBuilderOption.keepAliveTimeout", new Object[]{150L, TimeUnit.SECONDS});
-            EventHub eventHub = client.newEventHub("peer0.org1.example.com", "grpc://" + IP + ":7053", ehProperties);
 
-            ChannelConfiguration channelConfiguration = new ChannelConfiguration(new File(CHANELTX));
-            Channel channel = client.newChannel("mychannel", orderer, channelConfiguration, client.getChannelConfigurationSignature(channelConfiguration, org1_peer_admin));
+            try {
+                eventHub = client.newEventHub("peer0.org1.example.com", "grpc://" + IP + ":7053", ehProperties);
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
 
-            channel.addOrderer(orderer);
-            channel.joinPeer(peer);
-            channel.addEventHub(eventHub);
 
-            channel.initialize();
-            System.out.println(channel.getName() + " created!");
+            try {
+                channelConfiguration = new ChannelConfiguration(new File(CHANELTX));
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            try {
+                channel = client.newChannel("mychannel", orderer, channelConfiguration, client.getChannelConfigurationSignature(channelConfiguration, org1_peer_admin));
+            } catch (TransactionException e) {
+                e.printStackTrace();
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            }
+
+            try {
+                channel.addOrderer(orderer);
+                try {
+                    channel.joinPeer(peer);
+                } catch (ProposalException e) {
+                    e.printStackTrace();
+                }
+                channel.addEventHub(eventHub);
+
+                channel.initialize();
+            } catch (InvalidArgumentException e) {
+                e.printStackTrace();
+            } catch (TransactionException e) {
+                e.printStackTrace();
+            }
+
+        }
+    finally {
+
+        }
+    }
+
+    public void SendCommands() {
+        System.out.println(channel.getName() + " created!");
 
 //start here
 
-            final ChaincodeID chaincodeID = ChaincodeID.newBuilder().setName(CHAIN_CODE_NAME)
-                    .setVersion(CHAIN_CODE_VERSION)
-                    .setPath("main/cc/src/doc_cc").build();
+        final ChaincodeID chaincodeID = ChaincodeID.newBuilder().setName(CHAIN_CODE_NAME)
+                .setVersion(CHAIN_CODE_VERSION)
+                .setPath("main/cc/src/doc_cc").build();
 
 
-            InstallProposalRequest installProposalRequest = client.newInstallProposalRequest();
-            installProposalRequest.setChaincodeID(chaincodeID);
-           ChaincodeEndorsementPolicy chaincodeEndorsementPolicy = new ChaincodeEndorsementPolicy();
+        InstallProposalRequest installProposalRequest = client.newInstallProposalRequest();
+        installProposalRequest.setChaincodeID(chaincodeID);
+        ChaincodeEndorsementPolicy chaincodeEndorsementPolicy = new ChaincodeEndorsementPolicy();
+        try {
             chaincodeEndorsementPolicy.fromYamlFile(new File("C:\\Users\\agliullin\\IdeaProjects\\fabric6\\src\\main\\env\\chaincodeendorsementpolicy.yaml"));
-            File initialFile = new File("C:\\Users\\agliullin\\IdeaProjects\\fabric6");
+        } catch (IOException e1) {
+            e1.printStackTrace();
+        } catch (ChaincodeEndorsementPolicyParseException e1) {
+            e1.printStackTrace();
+        }
+        File initialFile = new File("C:\\Users\\agliullin\\IdeaProjects\\fabric6");
 
+        try {
             installProposalRequest.setChaincodeSourceLocation(initialFile);
+        } catch (InvalidArgumentException e1) {
+            e1.printStackTrace();
+        }
         installProposalRequest.setChaincodeVersion(CHAIN_CODE_VERSION);
-          //  installProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
+        //  installProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
 
-            Set<Peer> peersFromOrg = new HashSet<>();
-            peersFromOrg.add(peer);
-         //   client.sendInstallProposal(installProposalRequest, peersFromOrg);
-
-
-
-            Collection<ProposalResponse> responses = client.sendInstallProposal(installProposalRequest, peersFromOrg);
-            for (ProposalResponse sdkProposalResponse : responses) {
-                try {
-                    System.out.println(sdkProposalResponse.getStatus());
-                    System.out.println(sdkProposalResponse.getMessage());
-
-                    //FabricProposalResponse.Endorsement element = sdkProposalResponse.getProposalResponse().getEndorsement();
-                    //ed.add(element);
-                } catch (NullPointerException e) {
-                    e.printStackTrace();
-                }
-//                if (proposal == null) {
-//                    proposal = sdkProposalResponse.getProposal();
-//                    proposalTransactionID = sdkProposalResponse.getTransactionID();
-//                    proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
-//
-//                }
+        Set<Peer> peersFromOrg = new HashSet<>();
+        peersFromOrg.add(peer);
+        //   client.sendInstallProposal(installProposalRequest, peersFromOrg);
 
 
+        Collection<ProposalResponse> responses = null;
+        try {
+            responses = client.sendInstallProposal(installProposalRequest, peersFromOrg);
+        } catch (ProposalException e1) {
+            e1.printStackTrace();
+        } catch (InvalidArgumentException e1) {
+            e1.printStackTrace();
+        }
+        for (ProposalResponse sdkProposalResponse : responses) {
+            try {
+                System.out.println(sdkProposalResponse.getStatus());
+                System.out.println(sdkProposalResponse.getMessage());
+
+
+            } catch (NullPointerException e) {
+                e.printStackTrace();
             }
 
+
+        }
+
+        try {
             SDKUtils.getProposalConsistencySets(responses);
+        } catch (InvalidArgumentException e1) {
+            e1.printStackTrace();
+        }
 
 
-            InstantiateProposalRequest instantiateProposalRequest = client.newInstantiationProposalRequest();
-            instantiateProposalRequest.setProposalWaitTime(120000);
-            instantiateProposalRequest.setChaincodeID(chaincodeID);
-            instantiateProposalRequest.setFcn("Init");
-          instantiateProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
-            instantiateProposalRequest.setArgs(new String[] {"a", "500", "b","200"});
-            Map<String, byte[]> tm = new HashMap<>();
-            tm.put("HyperLedgerFabric", "InstantiateProposalRequest:JavaSDK".getBytes(UTF_8));
-            tm.put("method", "InstantiateProposalRequest".getBytes(UTF_8));
+        InstantiateProposalRequest instantiateProposalRequest = client.newInstantiationProposalRequest();
+        instantiateProposalRequest.setProposalWaitTime(120000);
+        instantiateProposalRequest.setChaincodeID(chaincodeID);
+        instantiateProposalRequest.setFcn("Init");
+        instantiateProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
+        instantiateProposalRequest.setArgs(new String[]{"a", "500", "b", "200"});
+        Map<String, byte[]> tm = new HashMap<>();
+        tm.put("HyperLedgerFabric", "InstantiateProposalRequest:JavaSDK".getBytes(UTF_8));
+        tm.put("method", "InstantiateProposalRequest".getBytes(UTF_8));
+        try {
             instantiateProposalRequest.setTransientMap(tm);
+        } catch (InvalidArgumentException e1) {
+            e1.printStackTrace();
+        }
 
 
-
+        try {
             responses = channel.sendInstantiationProposal(instantiateProposalRequest, channel.getPeers());
+        } catch (InvalidArgumentException e1) {
+            e1.printStackTrace();
+        } catch (ProposalException e1) {
+            e1.printStackTrace();
+        }
 
 
-            Collection<ProposalResponse> successful = new LinkedList<>();
+        Collection<ProposalResponse> successful = new LinkedList<>();
 
-            for (ProposalResponse response : responses) {
-                if (response.isVerified() && response.getStatus() == ProposalResponse.Status.SUCCESS) {
-                    successful.add(response);
-                }
-
-                System.out.println(response.getStatus());
-                System.out.println(response.getMessage());
+        for (ProposalResponse response : responses) {
+            if (response.isVerified() && response.getStatus() == ProposalResponse.Status.SUCCESS) {
+                successful.add(response);
             }
 
+            System.out.println(response.getStatus());
+            System.out.println(response.getMessage());
+        }
 
-            Collection<Orderer> orderers = channel.getOrderers();
+
+        Collection<Orderer> orderers = channel.getOrderers();
+        try {
             channel.sendTransaction(successful, orderers).thenApply(transactionEvent -> {
 
 
@@ -223,7 +346,7 @@ try {
                     transactionProposalRequest.setChaincodeID(chaincodeID);
                     transactionProposalRequest.setFcn("add");
                     transactionProposalRequest.setProposalWaitTime(120000);
-                    transactionProposalRequest.setArgs(new String[] {"doc0", "hash0"});
+                    transactionProposalRequest.setArgs(new String[]{"doc1", "hash0"});
 
                     Map<String, byte[]> tm2 = new HashMap<>();
                     tm2.put("HyperLedgerFabric", "TransactionProposalRequest:JavaSDK".getBytes(UTF_8));
@@ -241,7 +364,7 @@ try {
 
                     Collection<Set<ProposalResponse>> proposalConsistencySets = SDKUtils.getProposalConsistencySets(transactionPropResp);
                     if (proposalConsistencySets.size() != 1) {
-                        System.out.println("Expected only one set of consistent proposal responses but got %d"+ proposalConsistencySets.size());
+                        System.out.println("Expected only one set of consistent proposal responses but got %d" + proposalConsistencySets.size());
                     }
 
 
@@ -270,36 +393,50 @@ try {
                 if (e instanceof TransactionEventException) {
                     BlockEvent.TransactionEvent te = ((TransactionEventException) e).getTransactionEvent();
                     if (te != null) {
-                        System.out.println("Transaction with txid %s failed. %s"+ te.getTransactionID()+ e.getMessage());
+                        System.out.println("Transaction with txid %s failed. %s" + te.getTransactionID() + e.getMessage());
                     }
                 }
-                System.out.println("Test failed with %s exception %s"+ e.getClass().getName()+ e.getMessage());
+                System.out.println("Test failed with %s exception %s" + e.getClass().getName() + e.getMessage());
 
                 return null;
             }).get(120, TimeUnit.SECONDS);
+        } catch (InterruptedException e1) {
+            e1.printStackTrace();
+        } catch (ExecutionException e1) {
+            e1.printStackTrace();
+        } catch (TimeoutException e1) {
+            e1.printStackTrace();
+        }
 
 
-
-            // Close channel
-            channel.shutdown(true);
+        // Close channel
+        channel.shutdown(true);
 // end here
 
 
 
 
-        } catch (CryptoException e) {
-            e.printStackTrace();
-        } catch (InvalidArgumentException e) {
-            e.printStackTrace();
-        } catch (MalformedURLException e) {
-            e.printStackTrace();
-        } catch (EnrollmentException e) {
-            e.printStackTrace();
-        } catch (org.hyperledger.fabric_ca.sdk.exception.InvalidArgumentException e) {
-            e.printStackTrace();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    public static void main(String[] args) {
+
+          Main main  = new Main();
+          main.CreateAndConfigureChannel();
+          main.SendCommands();
     }
 
     static PrivateKey getPrivateKeyFromBytes(byte[] data) throws IOException, NoSuchProviderException, NoSuchAlgorithmException, InvalidKeySpecException {
