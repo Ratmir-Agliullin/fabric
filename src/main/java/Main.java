@@ -12,6 +12,7 @@ import org.hyperledger.fabric.protos.peer.FabricProposalResponse;
 import org.hyperledger.fabric.sdk.*;
 import org.hyperledger.fabric.sdk.exception.CryptoException;
 import org.hyperledger.fabric.sdk.exception.InvalidArgumentException;
+import org.hyperledger.fabric.sdk.exception.TransactionEventException;
 import org.hyperledger.fabric.sdk.security.CryptoSuite;
 import org.hyperledger.fabric.sdk.transaction.TransactionBuilder;
 import org.hyperledger.fabric_ca.sdk.HFCAClient;
@@ -154,14 +155,31 @@ try {
 
 
             Collection<ProposalResponse> responses = client.sendInstallProposal(installProposalRequest, peersFromOrg);
-            ProposalResponse response = responses.iterator().next();
+            for (ProposalResponse sdkProposalResponse : responses) {
+                try {
+                    System.out.println(sdkProposalResponse.getStatus());
+                    System.out.println(sdkProposalResponse.getMessage());
 
-            System.out.println(response.getMessage().toString());//here
-            System.out.println("response, который мы получили = " + response.toString());
+                    //FabricProposalResponse.Endorsement element = sdkProposalResponse.getProposalResponse().getEndorsement();
+                    //ed.add(element);
+                } catch (NullPointerException e) {
+                    e.printStackTrace();
+                }
+//                if (proposal == null) {
+//                    proposal = sdkProposalResponse.getProposal();
+//                    proposalTransactionID = sdkProposalResponse.getTransactionID();
+//                    proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
+//
+//                }
+
+
+            }
+
+            SDKUtils.getProposalConsistencySets(responses);
 
 
             InstantiateProposalRequest instantiateProposalRequest = client.newInstantiationProposalRequest();
-            instantiateProposalRequest.setProposalWaitTime(150L);
+            instantiateProposalRequest.setProposalWaitTime(120000);
             instantiateProposalRequest.setChaincodeID(chaincodeID);
             instantiateProposalRequest.setFcn("Init");
           instantiateProposalRequest.setChaincodeEndorsementPolicy(chaincodeEndorsementPolicy);
@@ -173,129 +191,93 @@ try {
 
 
 
-            Collection<ProposalResponse> responses4 = channel.sendInstantiationProposal(instantiateProposalRequest);
+            responses = channel.sendInstantiationProposal(instantiateProposalRequest, channel.getPeers());
 
 
+            Collection<ProposalResponse> successful = new LinkedList<>();
 
-//
-//            List<FabricProposalResponse.Endorsement> ed = new LinkedList<>();
-//            FabricProposal.Proposal proposal = null;
-//
-//            ByteString proposalResponsePayload = ByteString.copyFromUtf8("1234");
-//            String proposalTransactionID = "proposalTransactionID";
-//
-//
-//            for (ProposalResponse sdkProposalResponse : responses4) {
-//                try {
-//                    System.out.println(sdkProposalResponse.getStatus());
-//                    System.out.println(sdkProposalResponse.getMessage());
-//
-//                    FabricProposalResponse.Endorsement element = sdkProposalResponse.getProposalResponse().getEndorsement();
-//                    ed.add(element);
-//                } catch (NullPointerException e) {
-//                    e.printStackTrace();
-//                }
-//                if (proposal == null) {//here
-//                    proposal = sdkProposalResponse.getProposal();
-//                    proposalTransactionID = sdkProposalResponse.getTransactionID();
-//                    proposalResponsePayload = sdkProposalResponse.getProposalResponse().getPayload();
-//
-//                }
-//
-//
-//            }
-//
-//
-//            TransactionBuilder transactionBuilder = TransactionBuilder.newBuilder();
-//
-//            Common.Payload transactionPayload = transactionBuilder
-//                    .chaincodeProposal(proposal)
-//                    .endorsements(ed)
-//                    .proposalResponsePayload(proposalResponsePayload).build();
-//
-//            Common.Envelope transactionEnvelope = Common.Envelope.newBuilder()
-//                    .setPayload(transactionPayload.toByteString())
-//                    .setSignature(ByteString.copyFrom(client.getCryptoSuite().sign(org1_user.getEnrollment().getKey(), transactionPayload.toByteArray())))
-//                    .build();
-
-
-
-
-
-
-            for (ProposalResponse response3 : responses) {
-                if ( response3.getStatus() == ProposalResponse.Status.SUCCESS) {
-                    System.out.println("Succesful instantiate proposal response Txid: %s from peer %s"+ response.getTransactionID()+ response.getPeer().getName());
-                } else {
-                    System.out.println("failed instantiate proposal");
+            for (ProposalResponse response : responses) {
+                if (response.isVerified() && response.getStatus() == ProposalResponse.Status.SUCCESS) {
+                    successful.add(response);
                 }
+
+                System.out.println(response.getStatus());
+                System.out.println(response.getMessage());
             }
 
 
-            TransactionProposalRequest transactionProposalRequest = client.newTransactionProposalRequest();
-            transactionProposalRequest.setChaincodeID(chaincodeID);
-            transactionProposalRequest.setFcn("Invoke");
-            transactionProposalRequest.setProposalWaitTime(150L);
-            transactionProposalRequest.setArgs(new String[] {"move", "a", "b", "100"});
+            Collection<Orderer> orderers = channel.getOrderers();
+            channel.sendTransaction(successful, orderers).thenApply(transactionEvent -> {
 
-            Map<String, byte[]> tm2 = new HashMap<>();
-            tm2.put("HyperLedgerFabric", "TransactionProposalRequest:JavaSDK".getBytes(UTF_8));
-            tm2.put("method", "TransactionProposalRequest".getBytes(UTF_8));
-            tm2.put("result", ":)".getBytes(UTF_8));  /// This should be returned see chaincode.
-            transactionProposalRequest.setTransientMap(tm2);
 
-            System.out.println("sending transactionProposal to all peers with arguments: move(a,b,100)");
+                //transactionEvent.isValid(); // must be valid to be here.
 
-            Collection<ProposalResponse> transactionPropResp = channel.sendTransactionProposal(transactionProposalRequest);//, channel.getPeers());
-            for (ProposalResponse response1 : transactionPropResp) {
-                if (response1.getStatus() == ProposalResponse.Status.SUCCESS) {
-                    System.out.println("Successful transaction proposal response Txid: %s from peer %s"+ response1.getTransactionID()+ response1.getPeer().getName());
+                try {
+                    successful.clear();
 
-                } else {
-                    System.out.println("failed");
+                    client.setUserContext(org1_user);
+
+                    ///////////////
+                    /// Send transaction proposal to all peers
+                    TransactionProposalRequest transactionProposalRequest = client.newTransactionProposalRequest();
+                    transactionProposalRequest.setChaincodeID(chaincodeID);
+                    transactionProposalRequest.setFcn("add");
+                    transactionProposalRequest.setProposalWaitTime(120000);
+                    transactionProposalRequest.setArgs(new String[] {"doc0", "hash0"});
+
+                    Map<String, byte[]> tm2 = new HashMap<>();
+                    tm2.put("HyperLedgerFabric", "TransactionProposalRequest:JavaSDK".getBytes(UTF_8));
+                    tm2.put("method", "TransactionProposalRequest".getBytes(UTF_8));
+                    tm2.put("result", ":)".getBytes(UTF_8));  /// This should be returned see chaincode.
+                    transactionProposalRequest.setTransientMap(tm2);
+
+                    Collection<ProposalResponse> transactionPropResp = channel.sendTransactionProposal(transactionProposalRequest, channel.getPeers());
+                    for (ProposalResponse response5 : transactionPropResp) {
+                        if (response5.getStatus() == ProposalResponse.Status.SUCCESS) {
+                            successful.add(response5);
+                        }
+                    }
+
+
+                    Collection<Set<ProposalResponse>> proposalConsistencySets = SDKUtils.getProposalConsistencySets(transactionPropResp);
+                    if (proposalConsistencySets.size() != 1) {
+                        System.out.println("Expected only one set of consistent proposal responses but got %d"+ proposalConsistencySets.size());
+                    }
+
+
+                    ProposalResponse resp = transactionPropResp.iterator().next();
+                    byte[] x = resp.getChaincodeActionResponsePayload(); // This is the data returned by the chaincode.
+                    String resultAsString = null;
+                    if (x != null) {
+                        resultAsString = new String(x, "UTF-8");
+                    }
+                    System.out.println(resp.getChaincodeActionResponseStatus() + ": " + resultAsString);
+
+                    TxReadWriteSetInfo readWriteSetInfo = resp.getChaincodeActionResponseReadWriteSetInfo();
+
+
+                    ChaincodeID cid = resp.getChaincodeID();
+
+                    return channel.sendTransaction(successful).get(120, TimeUnit.SECONDS);
+
+                } catch (Exception e) {
+                    e.printStackTrace();
                 }
-            }
 
+                return null;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            QueryByChaincodeRequest queryByChaincodeRequest = client.newQueryProposalRequest();
-            queryByChaincodeRequest.setArgs(new String[] {"add", "name1","hash1"});
-            queryByChaincodeRequest.setFcn("invoke");
-            queryByChaincodeRequest.setChaincodeID(chaincodeID);
-
-            Map<String, byte[]> tm3 = new HashMap<>();
-            tm3.put("HyperLedgerFabric", "QueryByChaincodeRequest:JavaSDK".getBytes(UTF_8));
-            tm3.put("method", "QueryByChaincodeRequest".getBytes(UTF_8));
-            queryByChaincodeRequest.setTransientMap(tm3);
-
-            Collection<ProposalResponse> queryProposals = channel.queryByChaincode(queryByChaincodeRequest, channel.getPeers());
-            for (ProposalResponse proposalResponse : queryProposals) {
-                if (!proposalResponse.isVerified() || proposalResponse.getStatus() != ProposalResponse.Status.SUCCESS) {
-                    System.out.println("Failed query proposal from peer " + proposalResponse.getPeer().getName() + " status: " + proposalResponse.getStatus() +
-                            ". Messages: " + proposalResponse.getMessage()
-                            + ". Was verified : " + proposalResponse.isVerified());
-                } else {
-                    String payload = proposalResponse.getProposalResponse().getResponse().getPayload().toStringUtf8();
-                    System.out.println("Query payload of b from peer %s returned %s"+ proposalResponse.getPeer().getName()+ payload);
-
+            }).exceptionally(e -> {
+                if (e instanceof TransactionEventException) {
+                    BlockEvent.TransactionEvent te = ((TransactionEventException) e).getTransactionEvent();
+                    if (te != null) {
+                        System.out.println("Transaction with txid %s failed. %s"+ te.getTransactionID()+ e.getMessage());
+                    }
                 }
-            }
+                System.out.println("Test failed with %s exception %s"+ e.getClass().getName()+ e.getMessage());
+
+                return null;
+            }).get(120, TimeUnit.SECONDS);
+
 
 
             // Close channel
